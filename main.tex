@@ -118,6 +118,9 @@ This document aims to tackle these problems by proposing:
   \item
     New multi-writer Radicle reference types, backed by CRDTs, which mitigate
     the owner-availability burden.
+  \item
+    Finally we discuss how we can extend the confidence in the transparency of a
+    system to the UI presented to end-users through the use of \emph{gateways}.
 \end{itemize}
 
 \section{Transparent machines}\label{transparent-machines}
@@ -213,8 +216,12 @@ It might help to review these documents to better understand this one.
 
 The implementation may use pre-existing P2P technologies, \eg~the secure ledger
 might use an IPLD~\cite{ipld} linked list (as Radicle currently does), a DAT
-hypercore feed~\cite{dat} or a Trillian log~\cite{trillian}. The description
-below will try to remain agnostic to such decisions.
+hypercore feed~\cite{dat} or a Trillian log~\cite{trillian}. We base the
+following on a hash-linked list for simplicity, but note that Trillian in
+particular offers a similar API with respect to fetching of data and proving
+inclusion/forks, but uses a \emph{dense Merkle tree} instead, making many
+operations much more efficient. The theoretical properties are essentially the
+same though.
 
 \subsection{Protocol}
 
@@ -367,9 +374,8 @@ of behaviour presents a way for machines to cheat: should they wish to re-write
 history they may start outputting slightly corrupt logs in the hope that most
 monitors will stop monitoring, only to start again once history has been
 re-written. For this reason monitors should treat even mild corruptions of the
-log quite seriously, and when unmonitoring a machine should either persist the
-last ledger it has seen, or persist the machine's ID so as to make sure to never
-start monitoring it again.
+log quite seriously, and when unmonitoring a machine should persist the
+machine's ID so as to make sure to never start monitoring it again.
 
 Provable misbehaviours of a machine:
 \begin{itemize}
@@ -813,6 +819,24 @@ differently or labelled as ``pending'', to make it apparent that these haven't
 yet been checkpointed on the machine. Of course it is expected that the machine
 owner checkpoints appropriate heads every once in a while, and if this isn't the
 case then users may complain out of band, etc.
+
+\section{UI gateways}
+
+It's all well and good to have a transparent state machines but if the only way
+to access it is through a complex network protocol end-users (especially
+non-tech-savy ones) have no way of interacting with them. For this we would use
+trusted \emph{portals}, servers which present a UI as specified in the machine
+itself.
+
+As a simple example, a machine can record and maintain an HTML template paired
+with a machine query for populating the template placeholders. Each head of the
+machine would then determine a unique piece of HTML, which can be hashed. This
+pair of hashes can be sent to a monitor node for verification. This way the user
+can be sure that the portal has not tampered with the UI in any way. Such
+functionality could be implemented as a browser extension. The extension would
+send the pair of hashes to known monitors of the machine (as specified in the
+machine itself, or by the portal), and display an icon if they all confirm the
+hash-pair, or block the page entirely if any one of them does not.
 
 \begin{thebibliography}{9}
 
