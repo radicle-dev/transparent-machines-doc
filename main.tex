@@ -37,11 +37,11 @@
 \thanks{\textsuperscript{$\dagger$}Monadic, \texttt{james@monadic.xyz}}
 
 \begin{abstract}
-  This document presents a vision for a possible future of Radicle.  The main
-  goal is to transform Radicle into a technology that powers an ecosystem of
-  \emph{transparent state machines}. This is a network of replicated state
-  machines running the Radicle interpreter which are monitored by their peers,
-  to ensure they abide by the Radicle semantics.
+This document presents a vision for a possible future of Radicle. The main goal
+is to transform Radicle into a technology that powers an ecosystem of
+\emph{transparent state machines}. This is a network of replicated state
+machines running the Radicle interpreter which are monitored by their peers, to
+ensure they abide by the Radicle semantics.
 \end{abstract}
 
 \maketitle
@@ -52,22 +52,27 @@
 
 Currently Radicle is composed of two main parts:
 \begin{itemize}
-\item A deterministic programming language that is designed in order to be able
-  to specify state machines whose semantics may evolve over time.
-\item A daemon which allows hosting and reading such machines on IPFS, using:
+\item
+  A deterministic programming language that is designed in order to be able to
+  specify state machines whose semantics may evolve over time.
+\item
+  A daemon which allows hosting and reading such machines on IPFS, using:
   \begin{itemize}
-  \item The IPFS DAG to store the list of blocks containing the Radicle
+  \item
+    The IPFS DAG to store a linked list of blocks containing the Radicle
     expressions which determine the machine,
-  \item IPNS as a mutable reference to the head of the list.
-  \item IPFS Pubsub for communication of suggested inputs from peers to the
-    owner of a machine.
+  \item
+    IPNS as a mutable reference to the head of the list,
+  \item
+    IPFS Pubsub for communication of suggested inputs from peers to the owner of
+    a machine.
   \end{itemize}
 \end{itemize}
 
 This setup has a number of drawbacks.
 \begin{itemize}
   \item \emph{Unweildy reprogrammability.} The current design of the language
-    has not proved itself to allow for easy reprogramability of machines.
+    has not proved itself to allow for easy reprogrammability of machines.
   \item \emph{No guarantee of Radicle semantics.} The machine owner has complete
     control over what the IPNS link points to. In particular there are no
     guarantees that the owner will update the pointer in such a way that, over
@@ -76,7 +81,7 @@ This setup has a number of drawbacks.
     semantics, remove and include new data, etc., all without detection by other
     peers. In short there is no guarantee the view of the machine evolves
     according to the rules of a Radicle state machine, as defined in the Radicle
-    whitepaper \cite{radicle}. This voids a lot of the supposed benefits of
+    whitepaper \cite{radicle}. This voids a lot of the purported benefits of
     Radicle (``rule-based governance'').
   \item Because all mutations to the state of the machine are made visible
     through updates to the IPNS link, updates are associated with a single
@@ -86,25 +91,25 @@ This setup has a number of drawbacks.
     \begin{itemize}
     \item \emph{Owner availability burden:} The owner of the machine must be
       online at the same time as the request is sent.
-    \item \emph{Potential censorship:} The owner has the opportunity to reject
-      certain inputs if this might benefit them.
     \item \emph{Isolation:} Each machine is its own little universe. Even
       fundamental things like establishing pairings between usernames and public
       keys must be restarted from scratch on each machine.
+    \item \emph{Potential censorship:} The owner has the opportunity to reject
+      certain inputs if this might benefit them.
     \end{itemize}
 \end{itemize}
 
 This document aims to tackle these problems by proposing:
 \begin{itemize}
   \item A P2P system for \emph{monitoring} Radicle machines which, while giving
-    no guarantee that owners will follow Radicle semantics, make the detection
-    of misbehaviour evident at the protocol level. Peers simply ignore
-    misbehaving machines.
+    no guarantee that owners will follow the Radicle semantics, make the
+    detection of (some forms of) misbehaviour evident at the protocol
+    level. Peers simply ignore misbehaving machines.
   \item A system for inter-machine communication, backed by proofs of inclusion
     of outputs on other machines.
-  \item A simpler mechanism for restricting inputs, based on an updatable
-    validation function, rather than eval-redefinition, along with a non-hyper
-    static environment to allow for better reprogrammability.
+  \item A simpler mechanism for restricting inputs at the language level, based
+    on an updatable transactor function, rather than eval-redefinition, along
+    with a non-hyper static environment to allow for better reprogrammability.
   \item Finally the potential censorship problem is partially tackled by making
     censorship as detectable as possible by clients, so that users may gossip
     (off-protocol) about misbehaving machines and stop using them. We also
@@ -134,7 +139,7 @@ applications we have in mind are:
 
 \begin{itemize}
 \item
-  Certificate authorities, Name registries etc.
+  Certificate authorities, Name registries, etc.
 \item
   Package managers,
 \item
@@ -149,8 +154,9 @@ Essentially any organisation that wants to make transparent to the world one of
 the systems it uses to operate should be able to use Radicle to specify and host
 a machine to realise this goal. Even governments have been exploring ways to
 increase transparency in their operations in an effort to combat corruption and
-increase the faith of their citizens (\eg \cite{ukraine-transparency}), so there
-could be wide uses and demand for such an ecosystem.
+increase the faith their citizens have in them (\eg
+\cite{ukraine-transparency}), so there could be wide uses and demand for such an
+ecosystem.
 
 There are already several distributed systems in production in which
 certain entities publish secure logs, so that third parties may monitor
@@ -171,72 +177,75 @@ that are to be followed. The \emph{Radicle network} proposes a single unified
 protocol and monitoring system for all such ``transparent machines''. Such a
 unification would have several benefits:
 \begin{itemize}
-  \item Protocol re-use: Having many systems use the same underlying protocol
-    makes that protocol safer, more resources can be spent in auditing its code,
-    fixing vulnerabilities, etc.
-  \item Radicle code re-use: domain-logic specifying rules is likely to be
-    similar across domains and organisations. For example many domains will
-    require processes for holding votes, electing leaders, managing user
-    permissions, etc. By creating a set of ready-to-use packages each new
-    organisation may launch a tailored transparent machine with minimal effort.
-  \item Larger, homogeneous network of monitors: Once a machine is launched it
-    immediately benefits from a large network on monitors. Different domains can
-    now share monitor nodes, because each monitor just needs to understand the
-    base Radicle semantics, not specific domain requirements.
+\item \emph{Protocol re-use:} Having many systems use the same underlying
+  protocol makes that protocol safer, more resources can be spent in auditing
+  its code, fixing vulnerabilities, etc.
+\item \emph{Code re-use:} domain-logic specifying rules is likely to be similar
+  across domains and organisations. For example many domains will require
+  processes for holding votes, electing leaders, managing user permissions,
+  etc. By creating a set of ready-to-use packages each new organisation may
+  launch a tailored transparent machine with minimal effort.
+\item \emph{Larger, homogeneous network of monitors:} Once a machine is launched
+  it immediately benefits from a large network on monitors. Different domains
+  can now share monitor nodes, because each monitor just needs to understand the
+  base Radicle semantics, not specific domain requirements.
 \end{itemize}
 
 The ideas presented in this document take inspiration from:
 \begin{itemize}
-  \item This insightful blogpost:
-    \href{https://pfrazee.github.io/blog/secure-ledgers-dont-require-proof-of-work}{Secure
-      ledgers don't require proof-of-work}.
-  \item \emph{Transparent Certificate} in general, including:
-    \begin{itemize}
-      \item \href{https://www.certificate-transparency.org/how-ct-works}{How it
-        works}.
-      \item The latest
-        \href{https://tools.ietf.org/html/draft-ietf-trans-rfc6962-bis-31}{RFC}.
-      \item Some of the
-        \href{https://github.com/google/trillian/tree/master/docs}{docs} of the
-        \href{https://github.com/google/trillian}{Trillian} repository.
-      \item A paper:
-        \href{https://arxiv.org/pdf/1806.08817.pdf}{Aggregation-Based Gossip for
-          Certificate Transparency}.
-    \end{itemize}
+\item This insightful blogpost:
+  \href{https://pfrazee.github.io/blog/secure-ledgers-dont-require-proof-of-work}{Secure
+    ledgers don't require proof-of-work}.
+\item \emph{Transparent Certificate} in general, including:
+  \begin{itemize}
+  \item \href{https://www.certificate-transparency.org/how-ct-works}{How it
+    works}.
+  \item The latest
+    \href{https://tools.ietf.org/html/draft-ietf-trans-rfc6962-bis-31}{RFC}.
+  \item Some of the
+    \href{https://github.com/google/trillian/tree/master/docs}{docs} of the
+    \href{https://github.com/google/trillian}{Trillian} repository.
+  \item A paper: \href{https://arxiv.org/pdf/1806.08817.pdf}{Aggregation-Based
+    Gossip for Certificate Transparency}.
+  \end{itemize}
 \end{itemize}
 It might help to review these documents to better understand this one.
 
 The implementation may use pre-existing P2P technologies, \eg~the secure ledger
-might use an IPLD~\cite{ipld}, a DAT hypercore feed~\cite{dat} or a Trillian log~\cite{trillian}. The description below
-will try to remain agnostic to such decisions.
+might use an IPLD~\cite{ipld} linked list (as Radicle currently does), a DAT
+hypercore feed~\cite{dat} or a Trillian log~\cite{trillian}. The description
+below will try to remain agnostic to such decisions.
 
 \subsection{Protocol}
 
 Preliminary definitions:
 \begin{itemize}
 \item
-  \emph{Radicle-lang} refers to the Radicle programming language: a grammar for
-  valid expressions and an deterministic \emph{interpreter} which maintains
-  state (or produces an error) when ran over a sequence of expressions.
+  \emph{Radicle-lang} refers to the Radicle programming language~\cite{radicle}:
+  a syntax of valid expressions and an deterministic \emph{interpreter} which
+  maintains state (or produces an error) when ran over a sequence of
+  expressions.
 \item
   A (valid) \emph{Radicle sequence} is a sequence of Radicle-lang expressions
   which does not throw an error when evaluated in order by the Radicle-lang
   interpreter.
 \item
-  A \emph{secure ledger} is a list of records, called \emph{blocks}, which are
-  linked using cryptography. Each block contains a cryptographic hash of the
-  previous block, and transaction data. In our case the transaction data will be
-  a list of Radicle expressions. Each block is signed by the same private key,
-  whose corresponding public $p$ key identifies the ledger as a whole. We will
-  simply say \emph{ledger} to mean secure ledger in this document, and
-  \emph{ledger for $p$} when we wish to specify the corresponding public key.
+  A \emph{secure ledger} (also called a ``blockchain'', but without the implied
+  proof-of-work consensus protocol) is a list of records, called \emph{blocks},
+  which are linked using cryptography. Each block contains a cryptographic hash
+  of the previous block, and transaction data. In our case the transaction data
+  will be a list of Radicle expressions. Each block is signed by the same
+  private key, whose corresponding public $p$ key identifies the ledger as a
+  whole. We will simply say \emph{ledger} to mean secure ledger in this
+  document, and \emph{ledger for $p$} when we wish to specify the corresponding
+  public key.
 \item
   A ledger $x$ is a \emph{prefix} of another $y$, written $x \leq y$, if $y$ is
   obtainable from $x$ by appending zero or more blocks to $x$. In particular
   this implies that $x$ and $y$ both use the same public key. This forms a
   partial order on the set of ledgers.
-\item Two snapshots of a secure ledger are \emph{consistent} if one is a prefix
-  of the other.
+\item Two secure ledger are \emph{consistent} if one is a prefix of the other,
+  that is, if they are comparable for $\leq$.
 \end{itemize}
 
 The \emph{Radicle network} is composed of two sorts of nodes: \emph{machines}
@@ -552,12 +561,9 @@ the body, the machine's state will not be modified. The output is
 \texttt{[:rpc-query e r]}, which the calling machine can then use as proof that
 \texttt{e} evaluates to \texttt{r} on this machine.
 
-\hypertarget{radicle-lang-simplificationimprovements}{%
-\section{Radicle-lang
-simplification/improvements}\label{radicle-lang-simplificationimprovements}}
+\section{Radicle-lang simplification/improvements}\label{radicle-lang-simplificationimprovements}
 
-\subsection{Simpler input
-restriction}\label{simpler-input-restriction}
+\subsection{Simpler input restriction}\label{simpler-input-restriction}
 
 Eval redefinition is being used to restrict the allowed inputs of a chain. But
 in fact most of the logic for rejecting inputs is done by validators, at the
@@ -839,6 +845,9 @@ case then users may complain out of band, etc.
 
 \bibitem{multiwriter-dat}
   \href{https://www.datprotocol.com/deps/0008-multiwriter/}{Dat Protocol -- DEP-0008: Multi-Writer}
+
+\bibitem{ct-gossip}
+  \href{https://arxiv.org/pdf/1806.08817.pdf}{Aggregation-Based Gossip for Certificate Transparency}
   
 \end{thebibliography}
 
