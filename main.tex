@@ -111,9 +111,8 @@ This document aims to tackle these problems by proposing:
     discuss a web-of-trust type solution which may be implemented at a later
     stage.
   \item
-    To mitigate the owner availability burden, we propose that potential inputs
-    are kept track of by peers in a CRDT, similar to an OrbitDB log
-    \cite{orbitdb}.
+    New multi-writer Radicle reference types, backed by CRDTs, which mitigate
+    the owner-availability burden.
 \end{itemize}
 
 \section{Transparent machines}\label{transparent-machines}
@@ -753,7 +752,7 @@ initiated as follows:
     ...))
   
 (def comments-crdt
-  (new-crdt-log valid-comment))
+  (new-crdt-log! valid-comment))
 \end{lstlisting}
 
 A validator is used to discard invalid comments.
@@ -765,7 +764,7 @@ special effectful functions added to Radicle. First one must obtain the name of
 the log, and then one may append inputs to it:
 
 \begin{Verbatim}[fontsize=\small]
-> (crdt-log-append comments {:author "james" :comment "This is so rad!"})
+> (crdt-log-append! comments {:author "james" :comment "This is so rad!"})
 => :ok
 \end{Verbatim}
 
@@ -774,7 +773,27 @@ that is \texttt{(read-crdt-log! comments)} will return \texttt{[]}. This is
 because the machine's view must be updated explicitely by checkpointing a head:
 $(\text{\texttt{crdt-log-checkpoint!}} \ h)$ where $h$ is a head of the
 log. After such a checkpoint \texttt{(read-crdt-log! comments)} will return the
-list of comments as of that checkpoint.
+list of comments as of that checkpoint. Of course this means that the machine's
+data doesn't actually change until a head is submitted, and this can only be
+finalised by the owner. However query functions can use the latest head known by
+the user:
+
+\begin{Verbatim}[fontsize=\small]
+> (some-query-fn!)
+=> [...]
+> (crdt-log-checkpoint! comments latest-head)
+=> :ok
+> (some-query-fn!)
+=> [...] ;; more comments
+\end{Verbatim}
+
+A more sophisticated query function would make sure to query for the view of the
+machine and the current view of the CRDT seperately, and then merge them in such
+a way that e.g.~comments which are not yet visible to the machine are styled
+differently or labelled as ``pending'', to make it apparent that these haven't
+yet been checkpointed on the machine. Of course it is expected that the machine
+owner checkpoints appropriate heads every once in a while, and if this isn't the
+case then users may complain out of band, etc.
 
 %% \section{P2P reference types}\label{radicle-crdts}
 
