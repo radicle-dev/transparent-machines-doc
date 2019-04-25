@@ -1,0 +1,891 @@
+\documentclass[a4paper, oneside, 10pt]{amsart}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage[babel=true,kerning=true]{microtype}
+
+\usepackage{amsmath, amssymb}
+\usepackage{hyperref}
+\usepackage{fancyvrb}
+\usepackage{color}
+\usepackage[final]{listings}
+
+% Radicle code listing:
+\lstset{
+    language=Radicle,
+    % numbers=left,
+    basewidth=0.5em,
+    xleftmargin=0ex
+}
+
+% Customize Verbatim environment:
+\RecustomVerbatimEnvironment
+    {Verbatim}{Verbatim}
+    {framesep=2mm, frame=single, label=REPL, rulecolor=\color{black}, fontsize=\small}
+
+\newcommand*\eg{e.g.\ }
+\newcommand*\ie{i.e.\ }
+\def\id{\mathrm{id}}
+
+\begin{document}
+
+\title{Future of Radicle: Transparent Machines}
+\date{}
+\author{James Haydon}
+
+\thanks{\textsuperscript{$\dagger$}Monadic, \texttt{james@monadic.xyz}}
+
+\begin{abstract}
+  This document presents a vision for a possible future of Radicle.  The main
+  goal is to transform Radicle into a technology that powers an ecosystem of
+  \emph{transparent state machines}. This is a network of replicated state
+  machines running the Radicle interpreter which are monitored by their peers,
+  to ensure they abide by the Radicle semantics.
+\end{abstract}
+
+\maketitle
+
+\tableofcontents
+
+\section{Current state of Radicle}
+
+Currently Radicle is composed of two main parts:
+\begin{itemize}
+\item A deterministic programming language that is designed in order to be able
+  to specify state machines whose semantics may evolve over time.
+\item A daemon which allows hosting and reading such machines on IPFS, using:
+  \begin{itemize}
+  \item The IPFS DAG to store the list of blocks containing the Radicle
+    expressions which determine the machine,
+  \item IPNS as a mutable reference to the head of the list.
+  \item IPFS Pubsub for communication of suggested inputs from peers to the
+    owner of a machine.
+  \end{itemize}
+\end{itemize}
+
+This setup has a number of drawbacks.
+\begin{itemize}
+  \item \emph{Unweildy reprogrammability.} The current design of the language
+    has not proved itself to allow for easy reprogramability of machines.
+  \item \emph{No guarantee of Radicle semantics.} The machine owner has complete
+    control over what the IPNS link points to. In particular there are no
+    guarantees that the owner will update the pointer in such a way that, over
+    time, the sequence of Radicle expressions respects the \emph{append-only}
+    property. In particular the machine owner can rewrite history, change
+    semantics, remove and include new data, etc., all without detection by other
+    peers. In short there is no guarantee the view of the machine evolves
+    according to the rules of a Radicle state machine, as defined in the Radicle
+    whitepaper \cite{radicle}. This voids a lot of the supposed benefits of
+    Radicle (``rule-based governance'').
+  \item Because all mutations to the state of the machine are made visible
+    through updates to the IPNS link, updates are associated with a single
+    cryptographic key. In other words, Radicle machines are
+    \emph{single-writer}. This is partially mitigated by the mechanism of
+    suggesting inputs via IPFS Pubsub, but this still leaves two problems:
+    \begin{itemize}
+    \item \emph{Owner availability burden:} The owner of the machine must be
+      online at the same time as the request is sent.
+    \item \emph{Potential censorship:} The owner has the opportunity to reject
+      certain inputs if this might benefit them.
+    \item \emph{Isolation:} Each machine is its own little universe. Even
+      fundamental things like establishing pairings between usernames and public
+      keys must be restarted from scratch on each machine.
+    \end{itemize}
+\end{itemize}
+
+This document aims to tackle these problems by proposing:
+\begin{itemize}
+  \item A P2P system for \emph{monitoring} Radicle machines which, while giving
+    no guarantee that owners will follow Radicle semantics, make the detection
+    of misbehaviour evident at the protocol level. Peers simply ignore
+    misbehaving machines.
+  \item A system for inter-machine communication, backed by proofs of inclusion
+    of outputs on other machines.
+  \item A simpler mechanism for restricting inputs, based on an updatable
+    validation function, rather than eval-redefinition, along with a non-hyper
+    static environment to allow for better reprogrammability.
+  \item Finally the potential censorship problem is partially tackled by making
+    censorship as detectable as possible by clients, so that users may gossip
+    (off-protocol) about misbehaving machines and stop using them. We also
+    discuss a web-of-trust type solution which may be implemented at a later
+    stage.
+  \item
+    To mitigate the owner availability burden, we propose that potential inputs
+    are kept track of by peers in a CRDT, similar to an OrbitDB log
+    \cite{orbitdb}.
+\end{itemize}
+
+\section{Transparent machines}\label{transparent-machines}
+
+\subsection{Motivation}
+
+The main goal of this proposal is to fix the most important problem highlighted
+above: currently machines can misbehave in serious ways, and not respect the
+Radicle semantics at all. By creating an ecosystem of machines and monitors,
+allowing for the detection and broadcasting of misbehaviour, we aim to make
+machines \emph{transparent}: owners may still misbehave but it will be obvious
+to everyone else. Machines are hosted by people/organisations which want to
+expose transparency in the ways they operate, so they have an incentive to stick
+to the rules.
+
+The primary application for Radicle will still be the
+hosting/management/governing of important open source projects, but other
+applications we have in mind are:
+
+\begin{itemize}
+\item
+  Certificate authorities, Name registries etc.
+\item
+  Package managers,
+\item
+  Adding transparency to the governance systems used by e.g.~political
+  organisations,
+\item
+  Adding transparency to the interactions between organisations
+  (e.g.~NGOs, private corporations, etc.) end-users.
+\end{itemize}
+
+Essentially any organisation that wants to make transparent to the world one of
+the systems it uses to operate should be able to use Radicle to specify and host
+a machine to realise this goal. Even governments have been exploring ways to
+increase transparency in their operations in an effort to combat corruption and
+increase the faith of their citizens (\eg \cite{ukraine-transparency}), so there
+could be wide uses and demand for such an ecosystem.
+
+There are already several distributed systems in production in which
+certain entities publish secure logs, so that third parties may monitor
+their activities and check they are behaving according to rules everyone
+has agreed to. For example,
+\href{https://en.wikipedia.org/wiki/Certificate_Transparency}{Certificate
+Transparency} is:
+\begin{quote}
+an Internet security standard and open source framework for monitoring
+and auditing digital certificates. The standard creates a system of
+public logs that seek to eventually record all certificates issued by
+publicly trusted certificate authorities, allowing efficient
+identification of mistakenly or maliciously issued certificates.
+\end{quote}
+
+Each such distributed system must define afresh the protocol and set of rules
+that are to be followed. The \emph{Radicle network} proposes a single unified
+protocol and monitoring system for all such ``transparent machines''. Such a
+unification would have several benefits:
+\begin{itemize}
+  \item Protocol re-use: Having many systems use the same underlying protocol
+    makes that protocol safer, more resources can be spent in auditing its code,
+    fixing vulnerabilities, etc.
+  \item Radicle code re-use: domain-logic specifying rules is likely to be
+    similar across domains and organisations. For example many domains will
+    require processes for holding votes, electing leaders, managing user
+    permissions, etc. By creating a set of ready-to-use packages each new
+    organisation may launch a tailored transparent machine with minimal effort.
+  \item Larger, homogeneous network of monitors: Once a machine is launched it
+    immediately benefits from a large network on monitors. Different domains can
+    now share monitor nodes, because each monitor just needs to understand the
+    base Radicle semantics, not specific domain requirements.
+\end{itemize}
+
+The ideas presented in this document take inspiration from:
+\begin{itemize}
+  \item This insightful blogpost:
+    \href{https://pfrazee.github.io/blog/secure-ledgers-dont-require-proof-of-work}{Secure
+      ledgers don't require proof-of-work}.
+  \item \emph{Transparent Certificate} in general, including:
+    \begin{itemize}
+      \item \href{https://www.certificate-transparency.org/how-ct-works}{How it
+        works}.
+      \item The latest
+        \href{https://tools.ietf.org/html/draft-ietf-trans-rfc6962-bis-31}{RFC}.
+      \item Some of the
+        \href{https://github.com/google/trillian/tree/master/docs}{docs} of the
+        \href{https://github.com/google/trillian}{Trillian} repository.
+      \item A paper:
+        \href{https://arxiv.org/pdf/1806.08817.pdf}{Aggregation-Based Gossip for
+          Certificate Transparency}.
+    \end{itemize}
+\end{itemize}
+It might help to review these documents to better understand this one.
+
+The implementation may use pre-existing P2P technologies, \eg~the secure ledger
+might use an IPLD~\cite{ipld}, a DAT hypercore feed~\cite{dat} or a Trillian log~\cite{trillian}. The description below
+will try to remain agnostic to such decisions.
+
+\subsection{Protocol}
+
+Preliminary definitions:
+\begin{itemize}
+\item
+  \emph{Radicle-lang} refers to the Radicle programming language: a grammar for
+  valid expressions and an deterministic \emph{interpreter} which maintains
+  state (or produces an error) when ran over a sequence of expressions.
+\item
+  A (valid) \emph{Radicle sequence} is a sequence of Radicle-lang expressions
+  which does not throw an error when evaluated in order by the Radicle-lang
+  interpreter.
+\item
+  A \emph{secure ledger} is a list of records, called \emph{blocks}, which are
+  linked using cryptography. Each block contains a cryptographic hash of the
+  previous block, and transaction data. In our case the transaction data will be
+  a list of Radicle expressions. Each block is signed by the same private key,
+  whose corresponding public $p$ key identifies the ledger as a whole. We will
+  simply say \emph{ledger} to mean secure ledger in this document, and
+  \emph{ledger for $p$} when we wish to specify the corresponding public key.
+\item
+  A ledger $x$ is a \emph{prefix} of another $y$, written $x \leq y$, if $y$ is
+  obtainable from $x$ by appending zero or more blocks to $x$. In particular
+  this implies that $x$ and $y$ both use the same public key. This forms a
+  partial order on the set of ledgers.
+\item Two snapshots of a secure ledger are \emph{consistent} if one is a prefix
+  of the other.
+\end{itemize}
+
+The \emph{Radicle network} is composed of two sorts of nodes: \emph{machines}
+and \emph{monitors}.
+
+\subsubsection{Radicle ledgers}
+
+The point of the ecosystem is to maintain Radicle state machines which are
+determined by \emph{Radicle ledgers}. A block of a Radicle ledger for $p$ is a
+record with the following fields:
+\begin{itemize}
+\item
+  \texttt{expressions}: a hash for the list of Radicle expressions,
+\item
+  \texttt{outputs}: a Merkle tree hash for the list of outputs for all
+  expressions of the machine from the start. This allows for compact proofs that
+  an output was seen on a machine, and is used in \S\ref{machine-communication}.
+\item
+  \texttt{previousHash}: hash of the previous block, or $\bot$,
+\item
+  \texttt{hash}: hash of this block,
+\item
+  \texttt{signature}: a signature for the whole record (minus the signature
+  field), for public key $p$.
+\end{itemize}
+
+Note that in order to keep the contents of the blocks lightweight, the
+expressions are not present directly, only a hash of them. Replication of the
+actual expressions is left to another layer of the Radicle network. For example
+the hash could be an IPFS CID, and the lists of expressions replicated through
+IPFS. In the following we will assume that a hash uniquely determines a list of
+Radicle expressions.
+
+The set $R_p$ of Radicle ledgers for the public key $p$ is the smallest subset
+of the set of non-empty lists of blocks such that:
+\begin{itemize}
+\item
+  The ledger with a single block $a$, singed for $p$, with
+  $a_\mathtt{previoushash} = \bot$ and $a_\mathtt{expressions} = []$ is a member
+  of $R_p$.
+\item
+  If $x \in R_p$ with last block $a$, and $b$ is a block such that:
+  \begin{itemize}
+  \item
+    $b$ is signed for $p$,
+  \item
+    $b_\mathtt{previousHash} = a_\mathtt{hash}$,
+  \item
+    Appending the list of expressions corresponding to $b_\mathtt{expressions}$,
+    to the concatenation of all the lists of expressions corresponding to the
+    hashes in $x$ produces a valid Radicle sequence. Furthermore,
+    $b_\mathtt{outputs}$ is the root of the Merkle tree of all the outputs
+    obtained by running through this list of expressions,
+  \end{itemize}
+  then appending $b$ to $x$ produces a member of $R_p$.
+\end{itemize}
+
+\subsubsection{Machines}
+
+A \emph{Radicle machine} (or simply \emph{machine}), is a node (identified by a
+public key) which maintains a Radicle ledger. The machine responds to requests
+for inclusion of expressions in the ledger, and also makes the ledger accessible
+for monitoring by monitor nodes. To be considered \emph{valid} a machine must:
+\begin{itemize}
+\item[$(M_1)$]
+  Respect the \emph{append-only} property:
+  \begin{itemize}
+  \item
+    All the ledgers disseminated by the machine are consistent with one another.
+  \item
+    If ledger $s_0$ is made available before ledger $s_1$, then $s_0$ must be a
+    prefix of $s_1$.
+  \end{itemize}
+\item[$(M_2)$] Respect Radicle semantics: a ledger is invalid if the underlying
+  sequence of expressions throws an error, or the output hashes do not match the
+  \texttt{outputHash}'s contained in the blocks. In general all ledgers
+  disseminated must conform to the definition of a Radicle ledger given above.
+\item[$(M_3)$] Not censor: The machine should respond to all valid requests. In
+  particular the machine should respond to requests made by monitors for the
+  ledger, and try to include any valid expressions that are sent to it by other
+  peers.
+\end{itemize}
+
+Property $(M_3)$ is hard to state precisely for various reasons that are
+discussed below.
+
+A ledger that outputs a ledger that doesn't respect $(M_2)$ is
+\emph{corrupt}. Note that because ledgers are meant to start with the same dummy
+block, any two non-corrupt ledgers for the same key must have a common prefix.
+
+\subsubsection{Monitors}\label{monitors}
+
+Monitor nodes observe the ledgers output by certain machines and gossip between
+themselves in order to detect misbehaviour.
+
+A machine might misbehave in one of the following ways:
+\begin{itemize}
+\item[(1)]
+  Fork the ledger, so as to present different views to different clients, or in
+  order to re-write history.
+\item[(2)]
+  Output an invalid ledger, for example to be able to make invalid claims on
+  other machines.
+\item[(3)]
+  Refuse to respond to monitoring requests, in order to cover up some other
+  misbehaviour.
+\item[(4)]
+  Refuse to respond to expression inclusion requests (censoring).
+\end{itemize}
+
+In the case of (1) or (2), it will disseminate a proof of the misbehaviour as
+widely as possible. Monitors counter-act (3) by gossipping amongst themselves,
+so that inconsistencies in the responses from the machine can be
+detected. Monitors also have to be careful about unmonitoring and remonitoring
+machines. For example if a machine can't parse a log output by a machine it
+might decide to stop monitoring it, but then pick up monitoring again a few
+weeks later after the machine starts outputting valid logs again. But this sort
+of behaviour presents a way for machines to cheat: should they wish to re-write
+history they may start outputting slightly corrupt logs in the hope that most
+monitors will stop monitoring, only to start again once history has been
+re-written. For this reason monitors should treat even mild corruptions of the
+log quite seriously, and when unmonitoring a machine should either persist the
+last ledger it has seen, or persist the machine's ID so as to make sure to never
+start monitoring it again.
+
+Provable misbehaviours of a machine:
+\begin{itemize}
+\item
+  A machine has \emph{forked} if it has disseminated two inconsistent ledgers. A
+  \emph{fork-proof} consists of two blocks $b_0$ and $b_1$ (signed by the
+  machine's key) which contain identical hashes for a previous block
+  $b$. Because of the assumed properties of cryptographic hashes and signatures,
+  it is a assumed that the existence of a fork-proof proves that a machine has
+  forked.
+\item
+  A machine is \emph{invalid} if it has disseminated a ledger whose contents is
+  not a valid Radicle sequence. In this case a (minimal) \emph{invalidity-proof}
+  is a block $b$ such that the previous block is still valid.
+\end{itemize}
+Taken together, fork-proofs and invalidity-proofs form the set of
+\emph{misbehaviour-proofs}.
+
+Some other behaviours can not be proven to other nodes:
+\begin{itemize}
+\item
+  A monitor may detect that a machine is not desseminating the ledgers
+  monotonically. For example it might encounter a ledger $x_0$ via gossiping
+  only after this make a request for the ledger directly from the machine, for
+  which it responds $x_1$. If $x_1 < x_0$ then the machine has not respected
+  $(M1)$.
+\item
+  A monitor may detect that a machine is selectively applying some expressions
+  and not others. See \S\ref{censorship-detection} on censorship detection.
+\end{itemize}
+In cases that a monitor has detected unprovable misbheaviour, it creates a it
+creates a \emph{misbehaviour-description}, including for example signed Pubsub
+messages and HTTP responses, etc, and it should should make this known to other
+monitors and stop monitoring the machine, and never restart monitoring it.
+
+More formally, to be a valid monitor, a node must:
+\begin{itemize}
+\item Maintain and make available to peers its \emph{dead-set} $D$; a set of
+  machine IDs paired with either a misbehaviour-proof or a
+  misbehaviour-description. Whenever it connects to another peer it should make
+  this dead-set available to the peer, and ask for that peer's dead-set
+  $D'$. Once checking the proofs, all elements of the dead-set that are
+  accompanied by misbehaviour proofs should be added to its own dead-set. It is
+  free to add the other elements to its dead-set too, depending on how much it
+  trusts that monitor. A monitor should never remove elements from the dead-set.
+\item
+  Maintain and make available to peers its \emph{monitor-set} $M$; a set of IDs
+  of machines it is currently monitoring. It is free to add or remove machines
+  from this set as it sees fit, as long as $M \cap D = \varnothing$.
+\item
+  For each machine $m \in M$ in its monitor set, to:
+  \begin{itemize}
+  \item[(1)] Subscribe to the ledger updates from $m$.
+  \item[(2)] Subscribe to ledger updates for $m$ broadcast by other monitors.
+  \item[(3)] Maintain the current most up to date ledger for $m$:
+    \begin{itemize}
+    \item In normal operation all ledgers it receives from (1) and (2) should be
+      consistent, and hence there is always a unique maximum. This maximum
+      should be broadcast to all other monitors of $m$.
+    \item Should it receive a ledger, either through (1) or (2), which is not
+      consistent with the one it is currently maintaining, then the monitor has
+      detected a fork. In that case it should construct the minimal fork-proof
+      and broadcast it to all other monitors of $m$.
+    \item Should it receive a corrupt ledger, it should construct a minimal
+      invalidity-proof and broadcast this to all other monitors of $m$.
+    \end{itemize}
+  \item[(4)] If at any point it constructs a misbehaviour-proof for $m$, it must
+    remove $m$ from $M$, and add it to $D$.
+  \item[(5)] Detecting non-provable misbehaviours is more involved and
+    optional. Possible techniques are discussed in the next section. If at any
+    point it detects non-provable misbehaviour it should add $m$ to $D$ and
+    broadcast a misbehavior-description to other peers.
+  \end{itemize}
+\end{itemize}
+
+\hypertarget{censorship-detection}{%
+\subsection{Censorship detection}\label{censorship-detection}}
+
+Checking that machines respect the last rule $(M_3)$, no-censoring, is harder
+since there isn't a proof which can be disseminated among the peers. As a first
+step, censorship will not be blocked at the protocol level. Instead we will
+focus of censorship being as \emph{detectable} as possible to the
+end-users. Users are then encouraged to gossip amongst themselves (out-of-band),
+and simply stop using any machines that seem to be censoring inputs, or have
+done so in the past.
+
+Deciding if an input is being censored can by difficult. Given a ledger, an
+expression $e$ may be valid as the next input. However the machine might have
+already decided to include other expressions in the next block, some of which
+invalidate $e$. Even if $e$ is insertable at any position in the next block that
+is formed by the machine, and the machine received the expression $e$ before
+starting that block, it is unclear that the machine tried to censor $e$. Indeed
+it might have received another input which was incompatible with $e$, and also
+incompatible with another input it decided to include in the next block, but was
+otherwise valid. It is even plausible that such inputs may be crafted for this
+very reason by a malicious actor in an attempt to block a certain input. To
+counter-act this we make $(M_3)$ more precise in the following way:
+\begin{itemize}
+  \item[$(M_3')$] Machines consider potential expressions for inclusion into the
+    ledger in such a way that an expression is rejected only if there exists
+    some index in the next block at which inserting that expression would form
+    an invalid sequence.
+\end{itemize}
+
+One algorithm that achieves this is the naive greedy one: expressions are
+considered one at a time in a random order, creating an increasing valid
+sequence. If appending the next item to the currently valid sequence does not
+create a valid sequence then it is rejected and never reconsidered.
+
+The disadvantage of this options is that checking censorship is quite expensive:
+one must try to insert an input at each location of a certain number of blocks,
+so possibly this check would only kick in at certain monitor nodes when other
+nodes have started to get many rejected expressions.
+
+In cases where censorship would be particularly bad (e.g.~voting on something),
+specialised Radicle data-structures could be used to make the tracking of
+potential expressions more transparent. For example a special set could be
+initialised with a validation function to specify exactly what sort of values
+are to be accepted. Expressions submitted for inclusion bypass the root
+validator and go straight to the set, as long as it remains ``open''. A special
+command, or another predicate, ``seals'' the set, at which point it can be
+processed, e.g.~to determine the result of the vote. Such a system removes any
+ambiguity on why an expression might not be accepted according to the Radicle
+semantics.
+
+\subsection{Inter-machine communication}\label{machine-communication}
+
+Since Radicle ledgers record a Merkle tree hash of the output list at each
+block, it is possible to create a compact proof witnessing that an output was
+seen on some machine. Radicle-lang will be equipped with a new primitive
+$(\text{\texttt{assert-on-machine}} \ k \ o \ p)$ which takes two arguments:
+\begin{itemize}
+\item
+  A public key $k$ identifiying a machine,
+\item
+  An output value $o$,
+\item
+  A proof $p$. This is composed of the signed block in which the output appears,
+  and the Merkle proof for the specific output of that block.
+\end{itemize}
+The function returns a Boolean value, indicating if the proof is valid.
+
+A machine can then depend on another by validating such proofs. For example,
+let's assume a machine $R$ has come to be trusted as a username registration
+service. $R$ accepts all requests to assign a username $u$ (a string) to a
+public key $k$, as long as that username has not already been assigned to
+another. For each such valid request it will output $[u \ k]$, a vector of
+length 2. Another machine $P$, representing an important open source project,
+may then allow users to use certain usernames as long as they have been claimed
+on $R$. To claim a username on $P$, a user can include a proof $p$ of the
+presence of the output $[u \ k]$ on $R$, and the code defining the validation
+process on $P$ would make a call $(\text{\texttt{assert-on-machine}} \ R_\id
+\ [u \ k] \ p)$ in order to verify that the user may claim this username.
+
+For cases when the state of a machine is more complex, Radicle can be augmented
+with primitives for creating and checking authenticated datatypes\footnote{The
+  work for this has already been done in an unmerged pull-request.}. A machine
+can then create an authenticated piece of data representing a part of its domain
+state, and return the root hash as the output. Other machines can then use this
+to create proofs stating various properties of this state.
+
+\subsubsection{Linear time}
+
+Using a Merkle hash actually has another benefit over referencing outputs
+directly: one can require that one uses a relatively ``fresh'' version of the
+referenced machine's state. For example, a more sophisticated version of $R$
+might have various means of revocating usernames for various reasons. The
+function \texttt{assert-on-machine} could optionally also check that the block
+being referenced is not strictly before any previous block that was referenced
+from the same machine. This prevents users using very old inputs as part of
+their proofs. While the machine $P$ may experience a ``lag'' in its view of $R$,
+time still flows in the sime direction.
+
+\subsubsection{RPC}
+
+It is even possible that a machine offer a sort of RPC functionality, by
+accepting some special inputs corresponding to specific queries, and outputting
+the result. Machines can even evaluate quite arbitrary expressions with the
+guarantee that state is not modified by using the pattern to evaluate
+\texttt{e}:
+\begin{verbatim}
+(catch 'rpc-result
+  (do (def r e)
+      (throw 'rpc-result r))
+  (fn [r] [:rpc-query e r]))
+\end{verbatim}
+Since \texttt{catch} always restores the entire state as it was before entering
+the body, the machine's state will not be modified. The output is
+\texttt{[:rpc-query e r]}, which the calling machine can then use as proof that
+\texttt{e} evaluates to \texttt{r} on this machine.
+
+\hypertarget{radicle-lang-simplificationimprovements}{%
+\section{Radicle-lang
+simplification/improvements}\label{radicle-lang-simplificationimprovements}}
+
+\subsection{Simpler input
+restriction}\label{simpler-input-restriction}
+
+Eval redefinition is being used to restrict the allowed inputs of a chain. But
+in fact most of the logic for rejecting inputs is done by validators, at the
+moment placed at the start of each ``command'' function.
+
+Futhermore once an eval-redefinition has taken place, this heavily restricts the
+programming available in the machine (that's the point), but this is annoying
+for experimentation at the REPL, crafting custom queries, etc. For example we
+have the idea that users who wanted JSON responses could just query
+\texttt{(to-json\ (list-patches))} instead of \texttt{(list-patches)}, but this
+is not valid after eval-redefinition.
+
+Here we propose that instead there is a special purpose function which holds the
+machines root validation function \texttt{tx}; a validation function that is
+used for all inputs to the machine. Whatever this function returns is what's
+finally evaluated. Furthermore, the Radicle executable can be configured to
+bypass the root-validator using a simple flag, for when one wants to experiment
+with the machine at the REPL or craft specialised queries. Daemons which are
+owner-mode for a machine should obviously never bypass the root validator when
+accepting new inputs, but the \texttt{query} endpoint on a local daemon would
+just execute expressions normally, without calling \texttt{tx}.
+
+Even just for a simple counter-machine, the eval-redefinition spec of the
+state-machine is not beginner friendly (omitting the prelude):
+\begin{lstlisting}
+(def i (ref 0))
+
+(def eval
+  (fn [input rad-state]
+    (match input
+      :increment
+        (eval (quote (modify-ref i (fn [x] (+ 1 x)))) rad-state)
+      :getCounter
+        (list (read-ref i) rad-state))))
+\end{lstlisting}
+
+This is what it would look like with a root-validator:
+\begin{lstlisting}
+(def i (ref 0))
+
+(def tx
+  (fn [expr]
+    (if (eq? expr :increment)
+      (modify-ref i (fn [x] (+ 1 x)))
+      (throw :invalid-input "Can only :inc!"))))
+\end{lstlisting}
+
+Note that querying has now been pushed out of the machine code altogether; if one wants to query the machine for the current value one can just use the expression
+
+Such validation functions can be layered, higher-order, etc., and this makes for
+more flexible code-reuse between machines. In particular, because they can be
+stateful, this allows for the creation of interesting ``middleware'', for
+example for conducting votes, authenticating users, moderating comments, etc.
+
+For example if the participants of a machine decide all inputs should be signed
+by some public key, then they could import a standard higher-order validation
+function, designed as follows. The function $(\text{\texttt{signed-input}} \ f)$
+expects all inputs to be of the form:
+\begin{lstlisting}
+[:signed-input
+  {:nonce "123"
+   :machine-id "abc"
+   :public-key pk
+   :signature s
+   :input i}]
+\end{lstlisting}
+It would check that the signature \texttt{s} is indeed a signature for
+the rest of the dict, and then pass
+\begin{lstlisting}
+{:input i
+ :author pk}
+\end{lstlisting}
+to the sub-validator $f$.
+
+Higher-order validator can also be stateful. For example, a validator can manage
+a vote for some binary decision. It would look for specific sorts of inputs,
+\emph{proposal inputs}, and when it encounters one, start a vote on that
+proposal (other sorts of inputs are simply passed through to some
+sub-handler). At that point it then also listens for \emph{vote inputs} for that
+specific proposal, maintaining in state how much votes each outcome has
+accumulated. When it successfully processes a vote, it simply returns the
+metadata:
+\begin{lstlisting}
+[:vote-accepted
+  {:vote-for "123"
+   :user "user-id"}]
+\end{lstlisting}
+When enough votes have come through for there to be a winner, that expression is
+passed through to another sub-handler.
+
+Such a system can for example enable most inputs (new issues, comments, etc.) to
+go through a standard transactor, but important code changes to go through a
+voting process before being evaluated.
+
+\subsection{Non-hyper static environment}
+
+We have created a few remote machines and they all seem to have the
+following:
+
+\begin{itemize}
+\item
+  A big chunk of ``domain'' state (e.g.~a dict of issues).
+\item
+  Smaller ``metadata'' state (e.g.~used up nonces, next ID, admin set,
+  etc.).
+\item
+  A set of commands, doing a lot of validation and a little bit of
+  mutation.
+\end{itemize}
+
+Some ways people might ``reprogram'' a machine:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\item
+  Fix some of the data (add a default field).
+\item
+  Tweak validation of an existing command (add more conditions). Maybe
+  also tweak the mutation this command does.
+\item
+  Add a whole new command.
+\end{enumerate}
+
+Scenario (1) is probably quite common as part of an update which does
+(2) or (3), because new features of changes to old features might demand
+a modified data format. In any case it is probably quite easy, just a
+\texttt{(modify-ref\ ...)}.
+
+The first step of scenario (3) is quite easy: add a new function for the
+new command. However you must then mutate the input-validator to accept
+this new invocation. This might be tricky: the pertinent validator might
+be under a few layers of higher order validators. If you are lucky the
+validtor you want to mutate was put in a ref (to be dereferenced by
+other validators) and you can mutate that directly.
+
+In any case it seems that scenario (2) (tweaking existing functionality)
+is the tricky one. Relaxing the hyperstatic environment seems like one
+way of making this easier, since now you can just resubmit definitions
+for the functions you want to change.
+
+Non-hyperstatic would also allow for old definitions to get garbage
+collected, whereas before this wasn't possible because an old definition
+could still be in use in some deeply nested closure. Machine
+participants would then be much more encouraged to update the modules in
+use on a machine.
+
+\section{CRDT data types}
+
+\subsubsection{OrbitDB and IPFS log}
+
+Here we will quickly describe how IPFS-log works, which is what all the
+datatypes of OrbitDB are based on. The ideas of Multi-Writer DAT are quite
+similar.
+
+IPFS-log is a conflict-free replicated data structure (CRDT) that uses IPFS for
+storage and replication. The log is formed of \emph{entries} which are documents
+on IPFS, identified by CID. Each entry contains a set of CIDs of previous
+entries, usually the latest ones the node was aware of when creating the new
+entry. This forms a DAG of entries. By being given an entry (a \emph{head}), a
+node can recursively resolve the pointers to other entries in order to access
+the whole log. The entries contain CRDT log-operations and so despite the
+ordering on the entries being only partial, the view that nodes have on the
+order of the items in the log is eventually consistent.
+
+IPFS-log allows restricting the write-access to a set of public keys. For the
+moment this set can only grow (this is also the case with Multi-Writer DAT), but
+the maintainers state that access revocation is currently on the development
+roadmap.
+
+\subsection{Input queue}
+
+If the owner is offline then participants of a machine may pool the inputs they
+would like to submit in a queue, which the owner can read from once they are
+back online. If inputs \emph{always} go through such a decentralised
+data-structure, then this also makes it easier to monitor which inputs are being
+potentially censored by the machine.
+
+IPFS-log could be used directly for this, but it would probably be more
+efficient if each peer drops any inputs which are not valid according to its
+current view of the machine.
+
+\subsection{Radicle data types}
+
+More ambitiously, we can imagine new Radicle reference types for storing data
+that isn't as sensitive to ordering as the list of expressions defining the
+semantics of the machine. For example an an ``append-only log'' could be
+initiated as follows:
+
+\begin{lstlisting}
+(def valid-comment
+  (fn [c]
+    ...))
+  
+(def comments-crdt
+  (new-crdt-log valid-comment))
+\end{lstlisting}
+
+A validator is used to discard invalid comments.
+
+Behind the scenes this would refer to a CRDT log either backed by IPFS-log, or
+something similar. The name of the log is generated deterministically using the
+machine's ID and a counter. \emph{Writing} to the log happens off-machine, with
+special effectful functions added to Radicle. First one must obtain the name of
+the log, and then one may append inputs to it:
+
+\begin{Verbatim}[fontsize=\small]
+> (crdt-log-append comments {:author "james" :comment "This is so rad!"})
+=> :ok
+\end{Verbatim}
+
+Even after people have added entries to the log, the machine will not see them,
+that is \texttt{(read-crdt-log! comments)} will return \texttt{[]}. This is
+because the machine's view must be updated explicitely by checkpointing a head:
+$(\text{\texttt{crdt-log-checkpoint!}} \ h)$ where $h$ is a head of the
+log. After such a checkpoint \texttt{(read-crdt-log! comments)} will return the
+list of comments as of that checkpoint.
+
+%% \section{P2P reference types}\label{radicle-crdts}
+
+%% At the moment a machine must be available to accept inputs at all times. This
+%% means that participants of a machine can't submit new items (issues,
+%% merge-requests, comments, etc.) until the machine comes back online. 
+
+%% At the moment machines are single-writer, and as a consequence the owner must be
+%% available to accept new inputs at all times. This isn't really a restriction for
+%% the sequence of expressions which define the semantics of the machine, since
+%% such inputs are quite rare. But for bread-and-butter inputs adding user-data
+%% this can be a burden.
+
+%% At the moment such (domain-level) state of a machine is mostly held in
+%% \texttt{ref}s, and the contents of a ref is determined by the sequence
+%% of \texttt{write-ref}s that have targeted that ref. Each of these
+%% commands must be in an input expression that is included in a block by a
+%% machine.
+
+%% Another possibility might be for Radicle to contain special
+%% (multiwriter) \emph{P2P} mutable datatypes alongside refs, which are
+%% used to contain specific parts of the state of a machine.
+
+%% One such example might be a \emph{multi-writer mutable dict}. This is a
+%% dict from string keys to arbitrary values with the following properties:
+%% - The dict is initiated with a validator \texttt{v} and a
+%% conflict-resolver \texttt{r}, both are functions.
+
+%% TBC
+
+%% So Julian is investigating DAT. I have been thinking some about ``adding
+%% various p2p datatypes'' to radicle machines.
+
+%% A basic example is adding a reference to another machine. This is
+%% actually what we already do in the project machine in some sense.
+
+%% But one of the queries for state on a machine might also reference the
+%% state of another machine. The level of ``consistency'' here is that, any
+%% 2 snapshots of the machines, when combined, provide a view into this
+%% combined state.
+
+%% More basically you might add a reference to an append only log, but that
+%% maybe someone else than the machine owner has the public key. For
+%% example each new ``admin'' to a machine might get their own log, and
+%% then when the state of the machine is queried it gets all these logs
+%% too, to get the inputs of all the admins.
+
+%% The most extreme thing I might want to add is a ``multiwriter DAT dict
+%% ref'', this would be a reference type that has roughly the API of a a
+%% dict under a ref, however it has other operations like ``add writer'',
+%% etc. Also when you \texttt{get} a key you get back a list of possible
+%% values (because the consensus mechanism might have conflicts), so at
+%% creation of the multiwriter-dict you would also provide a lambda which
+%% is used for resolving these conflicts.
+
+%% This is in fact not really anything new. In some sense I am just saying:
+%% because we have the \texttt{query} fn in radicle, it's possible to craft
+%% a radicle expression that queries more than one machine, gets some data
+%% back, and puts it together. For example one could do this to get a
+%% combined view of the issues and patches of a project and maybe highlight
+%% the cross-references. Should we encourage this sort of thing?
+
+%% It seems likely that if we create a ``identity'' machine, where people
+%% claim usernames with public keys, a lot of other machines might craft
+%% queries which reference it. (for reference, the \texttt{get} key API:
+%% https://github.com/mafintosh/hyperdb\#dbgetkey-callback)
+
+%% semi-related:
+
+%% The above has made me realise that the fundamental queries really
+%% \emph{should} be ``on-chain''. Otherwise, granted there is all the state
+%% and transactional functions on-chain, but people can still disagree on
+%% stuff. For example the patches machine. It was stated that one can
+%% derive from the state what the state of the repo is (give some other
+%% assumptions like no off-machine commits). But this derivation fn is
+%% non-trivial, people could
+
+%% still argue over what is ``the state of the repo as of this CID''.
+
+\begin{thebibliography}{9}
+
+\bibitem{radicle} Monadic. Radicle. October 2018
+
+\bibitem{ukraine-transparency}
+  http://www.ua.undp.org/content/ukraine/en/home/blog/2018/the-expectations-and-reality-of-e-declarations.html
+
+\bibitem{frazee-post} Blog post:
+  \href{https://pfrazee.github.io/blog/secure-ledgers-dont-require-proof-of-work}{Secure
+    ledgers don't require proof-of-work}
+
+\bibitem{transparent-certificate}
+  \href{https://www.certificate-transparency.org/how-ct-works}{Ceritficte Transparency: How it works}
+
+\bibitem{dat}
+  Ogden et.~al., Code for Science. 2008. ``Dat - Distributed Dataset Synchronization And Versioning''.
+
+\bibitem{trillian}
+  \href{https://github.com/google/trillian}{A transparent, highly scalable and cryptographically verifiable data store.}
+
+\bibitem{ipld}
+  \href{https://github.com/ipld/ipld}{IPLD -- InterPlanetary Linked Data}
+
+\bibitem{orbitdb}
+  \href{https://github.com/orbitdb/orbit-db}{OrbitDB -- A Peer-to-Peer Databases for the Decentralized Web}
+
+\bibitem{ipfs-log}
+  \href{https://github.com/orbitdb/ipfs-log}{IPFS-log -- Append-only log CRDT on IPFS}
+
+\bibitem{multiwriter-dat}
+  \href{https://www.datprotocol.com/deps/0008-multiwriter/}{Dat Protocol -- DEP-0008: Multi-Writer}
+  
+\end{thebibliography}
+
+\end{document}
