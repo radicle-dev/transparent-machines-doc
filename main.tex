@@ -572,13 +572,15 @@ is not valid after eval-redefinition.
 
 Here we propose that instead there is a special purpose function which holds the
 machines root validation function \texttt{tx}; a validation function that is
-used for all inputs to the machine. Whatever this function returns is what's
-finally evaluated. Furthermore, the Radicle executable can be configured to
-bypass the root-validator using a simple flag, for when one wants to experiment
-with the machine at the REPL or craft specialised queries. Daemons which are
-owner-mode for a machine should obviously never bypass the root validator when
-accepting new inputs, but the \texttt{query} endpoint on a local daemon would
-just execute expressions normally, without calling \texttt{tx}.
+used for all inputs to the machine. When an expression $e$ is submitted to the
+machine, the atom \texttt{tx} is evaluated, and it is expected to be a
+function. If so, this function is invoked on $e$. Whatever this invocation
+returns is what's finally evaluated. Furthermore, the Radicle executable can be
+configured to bypass the root-validator using a simple flag, for when one wants
+to experiment with the machine at the REPL or craft specialised queries. Daemons
+which are owner-mode for a machine should obviously never bypass the root
+validator when accepting new inputs, but the \texttt{query} endpoint on a local
+daemon would just execute expressions normally, without calling \texttt{tx}.
 
 Even just for a simple counter-machine, the eval-redefinition spec of the
 state-machine is not beginner friendly (omitting the prelude):
@@ -589,7 +591,7 @@ state-machine is not beginner friendly (omitting the prelude):
   (fn [input rad-state]
     (match input
       :increment
-        (eval (quote (modify-ref i (fn [x] (+ 1 x)))) rad-state)
+        (eval (quote (modify-ref! i (fn [x] (+ 1 x)))) rad-state)
       :getCounter
         (list (read-ref i) rad-state))))
 \end{lstlisting}
@@ -601,11 +603,23 @@ This is what it would look like with a root-validator:
 (def tx
   (fn [expr]
     (if (eq? expr :increment)
-      (modify-ref i (fn [x] (+ 1 x)))
+      (modify-ref! i (fn [x] (+ 1 x)))
       (throw :invalid-input "Can only :inc!"))))
 \end{lstlisting}
 
-Note that querying has now been pushed out of the machine code altogether; if one wants to query the machine for the current value one can just use the expression
+Note that querying has now been pushed out of the machine code altogether; if
+one wants to query the machine for the current value one can just use the
+expression \texttt{(read-ref! i)}.
+
+The function \texttt{tx} is expected to perform most state-updates itself, and
+return a value which evaluates to itself, a simple log of what sort of
+transaction was processed. Only when new \emph{code} is to be added to the
+machine, for example redefinition of \texttt{tx} itself, would the function
+\texttt{tx} return that quoted code, to then be executed on the machine. One of
+the advantages of this is that it removes the need for the \texttt{eval}
+function altogether, which makes the semantics and static-analysis of Radicle
+much easier. However without eval-redefinition, it might be necessary to add
+macro-definition functionality.
 
 Such validation functions can be layered, higher-order, etc., and this makes for
 more flexible code-reuse between machines. In particular, because they can be
@@ -656,7 +670,6 @@ voting process before being evaluated.
 
 We have created a few remote machines and they all seem to have the
 following:
-
 \begin{itemize}
 \item
   A big chunk of ``domain'' state (e.g.~a dict of issues).
@@ -669,7 +682,6 @@ following:
 \end{itemize}
 
 Some ways people might ``reprogram'' a machine:
-
 \begin{enumerate}
 \def\labelenumi{\arabic{enumi}.}
 \item
@@ -755,7 +767,8 @@ initiated as follows:
   (new-crdt-log! valid-comment))
 \end{lstlisting}
 
-A validator is used to discard invalid comments.
+A validator is used to discard invalid comments. By default a log would not
+restrict write-access, but this can be controlled by other functions.
 
 Behind the scenes this would refer to a CRDT log either backed by IPFS-log, or
 something similar. The name of the log is generated deterministically using the
@@ -794,84 +807,6 @@ differently or labelled as ``pending'', to make it apparent that these haven't
 yet been checkpointed on the machine. Of course it is expected that the machine
 owner checkpoints appropriate heads every once in a while, and if this isn't the
 case then users may complain out of band, etc.
-
-%% \section{P2P reference types}\label{radicle-crdts}
-
-%% At the moment a machine must be available to accept inputs at all times. This
-%% means that participants of a machine can't submit new items (issues,
-%% merge-requests, comments, etc.) until the machine comes back online. 
-
-%% At the moment machines are single-writer, and as a consequence the owner must be
-%% available to accept new inputs at all times. This isn't really a restriction for
-%% the sequence of expressions which define the semantics of the machine, since
-%% such inputs are quite rare. But for bread-and-butter inputs adding user-data
-%% this can be a burden.
-
-%% At the moment such (domain-level) state of a machine is mostly held in
-%% \texttt{ref}s, and the contents of a ref is determined by the sequence
-%% of \texttt{write-ref}s that have targeted that ref. Each of these
-%% commands must be in an input expression that is included in a block by a
-%% machine.
-
-%% Another possibility might be for Radicle to contain special
-%% (multiwriter) \emph{P2P} mutable datatypes alongside refs, which are
-%% used to contain specific parts of the state of a machine.
-
-%% One such example might be a \emph{multi-writer mutable dict}. This is a
-%% dict from string keys to arbitrary values with the following properties:
-%% - The dict is initiated with a validator \texttt{v} and a
-%% conflict-resolver \texttt{r}, both are functions.
-
-%% TBC
-
-%% So Julian is investigating DAT. I have been thinking some about ``adding
-%% various p2p datatypes'' to radicle machines.
-
-%% A basic example is adding a reference to another machine. This is
-%% actually what we already do in the project machine in some sense.
-
-%% But one of the queries for state on a machine might also reference the
-%% state of another machine. The level of ``consistency'' here is that, any
-%% 2 snapshots of the machines, when combined, provide a view into this
-%% combined state.
-
-%% More basically you might add a reference to an append only log, but that
-%% maybe someone else than the machine owner has the public key. For
-%% example each new ``admin'' to a machine might get their own log, and
-%% then when the state of the machine is queried it gets all these logs
-%% too, to get the inputs of all the admins.
-
-%% The most extreme thing I might want to add is a ``multiwriter DAT dict
-%% ref'', this would be a reference type that has roughly the API of a a
-%% dict under a ref, however it has other operations like ``add writer'',
-%% etc. Also when you \texttt{get} a key you get back a list of possible
-%% values (because the consensus mechanism might have conflicts), so at
-%% creation of the multiwriter-dict you would also provide a lambda which
-%% is used for resolving these conflicts.
-
-%% This is in fact not really anything new. In some sense I am just saying:
-%% because we have the \texttt{query} fn in radicle, it's possible to craft
-%% a radicle expression that queries more than one machine, gets some data
-%% back, and puts it together. For example one could do this to get a
-%% combined view of the issues and patches of a project and maybe highlight
-%% the cross-references. Should we encourage this sort of thing?
-
-%% It seems likely that if we create a ``identity'' machine, where people
-%% claim usernames with public keys, a lot of other machines might craft
-%% queries which reference it. (for reference, the \texttt{get} key API:
-%% https://github.com/mafintosh/hyperdb\#dbgetkey-callback)
-
-%% semi-related:
-
-%% The above has made me realise that the fundamental queries really
-%% \emph{should} be ``on-chain''. Otherwise, granted there is all the state
-%% and transactional functions on-chain, but people can still disagree on
-%% stuff. For example the patches machine. It was stated that one can
-%% derive from the state what the state of the repo is (give some other
-%% assumptions like no off-machine commits). But this derivation fn is
-%% non-trivial, people could
-
-%% still argue over what is ``the state of the repo as of this CID''.
 
 \begin{thebibliography}{9}
 
