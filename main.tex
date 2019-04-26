@@ -33,6 +33,7 @@
 
 \title{Future of Radicle: Transparent Machines}
 \date{}
+\author{James Haydon}
 
 \thanks{\textsuperscript{$\dagger$}Monadic, \texttt{james@monadic.xyz}}
 
@@ -101,26 +102,27 @@ This setup has a number of drawbacks.
 
 This document aims to tackle these problems by proposing:
 \begin{itemize}
-  \item A P2P system for \emph{monitoring} Radicle machines which, while giving
-    no guarantee that owners will follow the Radicle semantics, make the
-    detection of (some forms of) misbehaviour evident at the protocol
-    level. Peers simply ignore misbehaving machines.
-  \item A system for inter-machine communication, backed by proofs of inclusion
-    of outputs on other machines.
-  \item A simpler mechanism for restricting inputs at the language level, based
-    on an updatable transactor function, rather than eval-redefinition, along
-    with a non-hyper static environment to allow for better reprogrammability.
-  \item Finally the potential censorship problem is partially tackled by making
-    censorship as detectable as possible by clients, so that users may gossip
-    (off-protocol) about misbehaving machines and stop using them. We also
-    discuss a web-of-trust type solution which may be implemented at a later
-    stage.
-  \item
-    New multi-writer Radicle reference types, backed by CRDTs, which mitigate
-    the owner-availability burden.
-  \item
-    Finally we discuss how we can extend the confidence in the transparency of a
-    system to the UI presented to end-users through the use of \emph{gateways}.
+\item A P2P system for \emph{monitoring} Radicle machines which, while giving no
+  guarantee that owners will follow the Radicle semantics, make the detection of
+  (some forms of) misbehaviour evident at the protocol level. Peers simply
+  ignore misbehaving machines. This also indirectly alleviates the owner
+  availability burden by making third-party, highly-available hosting services a
+  viable option, since they can be monitored by the original owner.
+\item A system for inter-machine communication, backed by proofs of inclusion of
+  outputs on other machines.
+\item A simpler mechanism for restricting inputs at the language level, based on
+  an updatable transactor function, rather than eval-redefinition, along with a
+  non-hyper static environment to allow for better reprogrammability.
+\item Finally the potential censorship problem is partially tackled by making
+  censorship as detectable as possible by clients, so that users may gossip
+  (off-protocol) about misbehaving machines and stop using them. We also discuss
+  a web-of-trust type solution which may be implemented at a later stage.
+\item
+  New multi-writer Radicle reference types, backed by CRDTs, which mitigate the
+  owner-availability burden.
+\item
+  Finally we discuss how we can extend the confidence in the transparency of a
+  system to the UI presented to end-users through the use of \emph{gateways}.
 \end{itemize}
 
 \section{Transparent machines}\label{transparent-machines}
@@ -139,7 +141,6 @@ to the rules.
 The primary application for Radicle will still be the
 hosting/management/governing of important open source projects, but other
 applications we have in mind are:
-
 \begin{itemize}
 \item
   Certificate authorities, Name registries, etc.
@@ -168,11 +169,11 @@ has agreed to. For example,
 \href{https://en.wikipedia.org/wiki/Certificate_Transparency}{Certificate
 Transparency} is:
 \begin{quote}
-an Internet security standard and open source framework for monitoring
-and auditing digital certificates. The standard creates a system of
-public logs that seek to eventually record all certificates issued by
-publicly trusted certificate authorities, allowing efficient
-identification of mistakenly or maliciously issued certificates.
+an Internet security standard and open source framework for monitoring and
+auditing digital certificates. The standard creates a system of public logs that
+seek to eventually record all certificates issued by publicly trusted
+certificate authorities, allowing efficient identification of mistakenly or
+maliciously issued certificates.
 \end{quote}
 
 Each such distributed system must define afresh the protocol and set of rules
@@ -255,9 +256,6 @@ Preliminary definitions:
   that is, if they are comparable for $\leq$.
 \end{itemize}
 
-The \emph{Radicle network} is composed of two sorts of nodes: \emph{machines}
-and \emph{monitors}.
-
 \subsubsection{Radicle ledgers}
 
 The point of the ecosystem is to maintain Radicle state machines which are
@@ -291,7 +289,7 @@ of the set of non-empty lists of blocks such that:
 \begin{itemize}
 \item
   The ledger with a single block $a$, singed for $p$, with
-  $a_\mathtt{previoushash} = \bot$ and $a_\mathtt{expressions} = []$ is a member
+  $a_\mathtt{previousHash} = \bot$ and $a_\mathtt{expressions} = []$ is a member
   of $R_p$.
 \item
   If $x \in R_p$ with last block $a$, and $b$ is a block such that:
@@ -303,7 +301,7 @@ of the set of non-empty lists of blocks such that:
   \item
     Appending the list of expressions corresponding to $b_\mathtt{expressions}$,
     to the concatenation of all the lists of expressions corresponding to the
-    hashes in $x$ produces a valid Radicle sequence. Furthermore,
+    hashes in $x$ produces a valid Radicle sequence, and furthermore,
     $b_\mathtt{outputs}$ is the root of the Merkle tree of all the outputs
     obtained by running through this list of expressions,
   \end{itemize}
@@ -311,6 +309,9 @@ of the set of non-empty lists of blocks such that:
 \end{itemize}
 
 \subsubsection{Machines}
+
+The \emph{Radicle network} is composed of two sorts of nodes: \emph{machines}
+and \emph{monitors}.
 
 A \emph{Radicle machine} (or simply \emph{machine}), is a node (identified by a
 public key) which maintains a Radicle ledger. The machine responds to requests
@@ -406,10 +407,10 @@ Some other behaviours can not be proven to other nodes:
   A monitor may detect that a machine is selectively applying some expressions
   and not others. See \S\ref{censorship-detection} on censorship detection.
 \end{itemize}
-In cases that a monitor has detected unprovable misbheaviour, it creates a it
-creates a \emph{misbehaviour-description}, including for example signed Pubsub
-messages and HTTP responses, etc, and it should should make this known to other
-monitors and stop monitoring the machine, and never restart monitoring it.
+In cases that a monitor has detected unprovable misbheaviour, it creates a
+\emph{misbehaviour-description}, including for example signed Pubsub messages,
+HTTP responses, etc., and it should make this known to other monitors and stop
+monitoring the machine, and never restart monitoring it.
 
 More formally, to be a valid monitor, a node must:
 \begin{itemize}
