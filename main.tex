@@ -536,27 +536,31 @@ with primitives for creating and checking authenticated datatypes\footnote{The
   work for this has already been done in an unmerged pull-request.}. A machine
 can then create an authenticated piece of data representing a part of its domain
 state, and return the root hash as the output. Other machines can then use this
-to create proofs stating various properties of this state.
+to create proofs stating various properties of this state. Alternatively, an
+extra field could be added to the blocks for this specific purpose, linked to a
+new special effectful primitive function, \texttt{update-domain-state}, and this
+would also have to be checked by the monitors.
 
 \subsubsection{Linear time}
 
-Using a Merkle hash actually has another benefit over referencing outputs
-directly: one can require that one uses a relatively ``fresh'' version of the
-referenced machine's state. For example, a more sophisticated version of $R$
-might have various means of revocating usernames for various reasons. The
-function \texttt{assert-on-machine} could optionally also check that the block
-being referenced is not strictly before any previous block that was referenced
-from the same machine. This prevents users using very old inputs as part of
-their proofs. While the machine $P$ may experience a ``lag'' in its view of $R$,
-time still flows in the sime direction.
+Using a Merkle hash of the whole domain state actually has another benefit over
+referencing outputs directly: one can require that one uses a relatively
+``fresh'' version of the referenced machine's state. For example, a more
+sophisticated version of $R$ might have various means of revocating usernames
+for various reasons. The function \texttt{assert-on-machine} could optionally
+also check that the output being referenced is not strictly before any previous
+output from the same machine that was also referenced. This prevents users using
+very old inputs as part of their proofs. While the machine $P$ may experience a
+``lag'' in its view of $R$, time still flows in the sime direction.
 
 \subsubsection{RPC}
 
 It is even possible that a machine offer a sort of RPC functionality, by
 accepting some special inputs corresponding to specific queries, and outputting
-the result. Machines can even evaluate quite arbitrary expressions with the
-guarantee that state is not modified by using the pattern to evaluate
-\texttt{e}:
+the result. Machines can even evaluate quite arbitrary expressions $e$ with the
+guarantee that state is not modified by using the following pattern\footnote{Of
+  course the machine should add a timeout in this case to prevent expressions
+  which take too long to evaluate.}:
 \begin{verbatim}
 (catch 'rpc-result
   (do (def r e)
@@ -838,6 +842,122 @@ functionality could be implemented as a browser extension. The extension would
 send the pair of hashes to known monitors of the machine (as specified in the
 machine itself, or by the portal), and display an icon if they all confirm the
 hash-pair, or block the page entirely if any one of them does not.
+
+\section{Rough implementation and roadmap notes}
+
+\begin{itemize}
+\item
+  The improvements to Radicle-lang are mostly independent of all the other
+  implementation requirements.
+\item
+  One possible implementation for transparent machines would use IPFS as much as
+  possible. Unfortunately IPFS PubSub messages are not signed at this time, so a
+  Radicle machine would be identified by an IPNS name which points to a record
+  containing, among other things a Radicle key and a pointer to the latest
+  signed head. The Radicle key should never change, and is also used for signing
+  PubSub messages. Care should be taken to create simple interfaces for:
+  \begin{itemize}
+  \item Discovery,
+  \item Ledger replication,
+  \item PubSub.
+  \end{itemize}
+  IPFS would initially be used for all three, but at a later stage one item
+  could be swapped out. For example at one point we might implement things on
+  top of libp2p, and use for example DAT for the ledger replication.
+  \begin{itemize}
+  \item
+    The machine uses the IPFS DAG for hash linking and replication of the
+    blocks. It is expected that the machine and all its monitors pin all the
+    machine's blocks. Furthermore blocks should contain a pointer to a tree of
+    inputs on IPFS (e.g. branching factor of 32, 100 expressions stored at each
+    leaf) for faster cold starts. If present, this field also need to be checked
+    by monitors.
+  \item
+    The blocks contains some extra optional data: the Merkle hash for a dense
+    left-biased Merkle tree of all the inputs of the machine. If this is
+    present, it must be checked by the monitors.
+  \item
+    IPFS pubsub for all communication between machines and monitors:
+    \begin{itemize}
+    \item
+      A machine would publish the current head using IPNS, but also disseminate
+      signed heads using a specific topic.
+    \item
+      Another topic is used for suggesting new inputs.
+    \item
+      Monitors use a specific topic for gossiping signed heads. A monitor should
+      subscribe to the topic and try to ensure that the latest signed head it
+      knows about is published on that topic at least once every $n$ minutes.
+      \begin{itemize}
+      \item
+        If it encounters a (consistent) signed head it has not seen published on
+        the topic yet, it publishes it immediately.
+      \item
+        If the latest signed head published to the topic hasn't been republished
+        in the last $n$ minutes then it publishes it.
+      \item
+        Also hopefully, IPFS PubSub might already have some form of message
+        reduplication.
+      \end{itemize}
+    \end{itemize}
+  \item
+    If a machine wants to offer low-latency requests, it can publish a
+    traditional DNS URL which can be used for:
+    \begin{itemize}
+    \item
+      Requesting the latest signed head. Obviously any signed head returned by
+      this method should also be published to the PubSub topic.
+    \item
+      Requesting a range of inputs along with the Merkle proof of validity.
+    \item
+      Requesting that an input be included. The requester should also publish
+      this request to the relevant PubSub topic to allow monitoring of
+      censoring.
+    \end{itemize}
+  \end{itemize}
+\item
+  Simple inter-machine communication only requires basic proofs of
+  inclusion. The more elaborate version would need authenticated Radicle
+  datatypes, which could be added later.
+\item
+  It would be ideal if Radicle2 launch with some nice story for allowing inputs
+  to be accepted in some form (even in a ``pending'' state) with high
+  availability. There are a few options for this:
+  \begin{itemize}
+  \item[(1)]
+    We also launch a ``pending inputs'' queue service. Potential inputs can
+    accumulate here when the machine is offline. Clients may query this service
+    in order to create a combined view of the machine.
+  \item[(2)]
+    We also launch a Radicle machine hosting service, to allow people to spin up
+    trusted Radicle machines at the press of a button.
+  \item[(3)]
+    We implement the Radicle CRDT datatypes.
+  \end{itemize}
+  Since (2) seems desirable in any case, it would probably be best to start with
+  this and add (1) and (3) at a later stage.
+
+\item
+  Code collaboration infra:
+  \begin{itemize}
+  \item
+    Username registry,
+  \item
+    Project registry,
+  \item
+    Merge-requests,
+  \item
+    Better CLI,
+  \item
+    More frontends.
+  \item
+    Git replication in-machine,
+  \item
+    Some story for CI (webhooks)
+  \end{itemize}
+\item
+  Better FFI for common langs,
+\end{itemize}
 
 \begin{thebibliography}{9}
 
