@@ -82,7 +82,7 @@ This setup has a number of drawbacks.
     semantics, remove and include new data, etc., all without detection by other
     peers. In short there is no guarantee the view of the machine evolves
     according to the rules of a Radicle state machine, as defined in the Radicle
-    whitepaper \cite{radicle}. This voids a lot of the purported benefits of
+    whitepaper~\cite{radicle}. This voids a lot of the purported benefits of
     Radicle (``rule-based governance'').
   \item Because all mutations to the state of the machine are made visible
     through updates to the IPNS link, updates are associated with a single
@@ -103,18 +103,18 @@ This setup has a number of drawbacks.
 This document aims to tackle these problems by proposing:
 \begin{itemize}
 \item A P2P system for \emph{monitoring} Radicle machines which, while giving no
-  guarantee that owners will follow the Radicle semantics, make the detection of
-  (some forms of) misbehaviour evident at the protocol level. Peers simply
+  guarantee that owners will follow the Radicle semantics, makes the detection
+  of (some forms of) misbehaviour evident at the protocol level. Peers simply
   ignore misbehaving machines. This also indirectly alleviates the owner
   availability burden by making third-party, highly-available hosting services a
   viable option, since they can be monitored by the original owner.
 \item A system for inter-machine communication, backed by proofs of inclusion of
-  outputs on other machines.
+  outputs or state on other machines.
 \item A simpler mechanism for restricting inputs at the language level, based on
   an updatable transactor function, rather than eval-redefinition, along with a
   non-hyper static environment to allow for better reprogrammability.
 \item Finally the potential censorship problem is partially tackled by making
-  censorship as detectable as possible by clients, so that users may gossip
+  censorship as detectable as possible by clients, so that users may then gossip
   (off-protocol) about misbehaving machines and stop using them. We also discuss
   a web-of-trust type solution which may be implemented at a later stage.
 \item
@@ -158,9 +158,9 @@ Essentially any organisation that wants to make transparent to the world one of
 the systems it uses to operate should be able to use Radicle to specify and host
 a machine to realise this goal. Even governments have been exploring ways to
 increase transparency in their operations in an effort to combat corruption and
-increase the faith their citizens have in them (\eg
-\cite{ukraine-transparency}), so there could be wide uses and demand for such an
-ecosystem.
+increase the faith their citizens have in them
+(e.g.~\cite{ukraine-transparency}), so there could be wide uses and demand for
+such an ecosystem.
 
 There are already several distributed systems in production in which
 certain entities publish secure logs, so that third parties may monitor
@@ -281,8 +281,8 @@ Note that in order to keep the contents of the blocks lightweight, the
 expressions are not present directly, only a hash of them. Replication of the
 actual expressions is left to another layer of the Radicle network. For example
 the hash could be an IPFS CID, and the lists of expressions replicated through
-IPFS. In the following we will assume that a hash uniquely determines a list of
-Radicle expressions.
+IPFS.\@ In the following we will assume that a hash uniquely determines a list
+of Radicle expressions.
 
 The set $R_p$ of Radicle ledgers for the public key $p$ is the smallest subset
 of the set of non-empty lists of blocks such that:
@@ -713,7 +713,7 @@ Some ways people might ``reprogram'' a machine:
 Scenario (1) is probably quite common as part of an update which does
 (2) or (3), because new features of changes to old features might demand
 a modified data format. In any case it is probably quite easy, just a
-\texttt{(modify-ref\ ...)}.
+\texttt{(modify-ref\~\ldots)}.
 
 The first step of scenario (3) is quite easy: add a new function for the
 new command. However you must then mutate the input-validator to accept
@@ -743,7 +743,7 @@ similar.
 
 IPFS-log is a conflict-free replicated data structure (CRDT) that uses IPFS for
 storage and replication. The log is formed of \emph{entries} which are documents
-on IPFS, identified by CID. Each entry contains a set of CIDs of previous
+on IPFS, identified by CID.\@ Each entry contains a set of CIDs of previous
 entries, usually the latest ones the node was aware of when creating the new
 entry. This forms a DAG of entries. By being given an entry (a \emph{head}), a
 node can recursively resolve the pointers to other entries in order to access
@@ -869,7 +869,7 @@ hash-pair, or block the page entirely if any one of them does not.
     The machine uses the IPFS DAG for hash linking and replication of the
     blocks. It is expected that the machine and all its monitors pin all the
     machine's blocks. Furthermore blocks should contain a pointer to a tree of
-    inputs on IPFS (e.g. branching factor of 32, 100 expressions stored at each
+    inputs on IPFS (e.g.~branching factor of 32, 100 expressions stored at each
     leaf) for faster cold starts. If present, this field also need to be checked
     by monitors.
   \item
@@ -974,7 +974,7 @@ hash-pair, or block the page entirely if any one of them does not.
   \href{https://www.certificate-transparency.org/how-ct-works}{Ceritficte Transparency: How it works}
 
 \bibitem{dat}
-  Ogden et.~al., Code for Science. 2008. ``Dat - Distributed Dataset Synchronization And Versioning''.
+  Ogden et.~al., Code for Science. 2008. ``Dat -- Distributed Dataset Synchronization And Versioning''.
 
 \bibitem{trillian}
   \href{https://github.com/google/trillian}{A transparent, highly scalable and cryptographically verifiable data store.}
