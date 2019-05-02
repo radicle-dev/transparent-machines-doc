@@ -14,10 +14,10 @@
 
 % Radicle code listing:
 \lstset{
-    language=Radicle,
-    % numbers=left,
-    basewidth=0.5em,
-    xleftmargin=0ex
+  language=Radicle,
+  numbers=left,
+  basewidth=0.5em,
+  xleftmargin=5ex
 }
 
 % Customize Verbatim environment:
@@ -27,7 +27,9 @@
 
 \newcommand*\eg{e.g.\ }
 \newcommand*\ie{i.e.\ }
+
 \def\id{\mathrm{id}}
+\def\tx{\texttt{tx}}
 
 \begin{document}
 
@@ -162,12 +164,12 @@ increase the faith their citizens have in them
 (e.g.~\cite{ukraine-transparency}), so there could be wide uses and demand for
 such an ecosystem.
 
-There are already several distributed systems in production in which
-certain entities publish secure logs, so that third parties may monitor
-their activities and check they are behaving according to rules everyone
-has agreed to. For example,
+There are already several distributed systems in production in which certain
+entities publish secure logs so that third parties may monitor their activities
+and check they are behaving according to rules everyone has agreed to. For
+example,
 \href{https://en.wikipedia.org/wiki/Certificate_Transparency}{Certificate
-Transparency} is:
+  Transparency} is:
 \begin{quote}
 an Internet security standard and open source framework for monitoring and
 auditing digital certificates. The standard creates a system of public logs that
@@ -222,7 +224,7 @@ following on a hash-linked list for simplicity, but note that Trillian in
 particular offers a similar API with respect to fetching of data and proving
 inclusion/forks, but uses a \emph{dense Merkle tree} instead, making many
 operations much more efficient. The theoretical properties are essentially the
-same though.
+same though. Remarks of implementation are in~\ref{impl}.
 
 \subsection{Protocol}
 
@@ -243,7 +245,7 @@ Preliminary definitions:
   which are linked using cryptography. Each block contains a cryptographic hash
   of the previous block, and transaction data. In our case the transaction data
   will be a list of Radicle expressions. Each block is signed by the same
-  private key, whose corresponding public $p$ key identifies the ledger as a
+  private key, whose corresponding public key $p$ identifies the ledger as a
   whole. We will simply say \emph{ledger} to mean secure ledger in this
   document, and \emph{ledger for $p$} when we wish to specify the corresponding
   public key.
@@ -276,6 +278,7 @@ record with the following fields:
   \texttt{signature}: a signature for the whole record (minus the signature
   field), for public key $p$.
 \end{itemize}
+For forwards compatibility, it is not invalid to include extra fields.
 
 Note that in order to keep the contents of the blocks lightweight, the
 expressions are not present directly, only a hash of them. Replication of the
@@ -576,9 +579,11 @@ the body, the machine's state will not be modified. The output is
 
 \subsection{Simpler input restriction}\label{simpler-input-restriction}
 
-Eval redefinition is being used to restrict the allowed inputs of a chain. But
-in fact most of the logic for rejecting inputs is done by validators, at the
-moment placed at the start of each ``command'' function.
+Eval redefinition is the main mechanism to update the semantics of a
+machine. But in fact most of the code for a machine is for rejecting non-allowed
+inputs and updating state, none of which has the flavour of ``evaluating''
+syntax or interpreting code in a special way. Rejecting inputs is mostly done by
+validators, at the moment placed at the start of each ``command'' function.
 
 Futhermore once an eval-redefinition has taken place, this heavily restricts the
 programming available in the machine (that's the point), but this is annoying
@@ -588,19 +593,23 @@ have the idea that users who wanted JSON responses could just query
 is not valid after eval-redefinition.
 
 Here we propose that instead there is a special purpose function which holds the
-machines root validation function \texttt{tx}; a validation function that is
-used for all inputs to the machine. When an expression $e$ is submitted to the
-machine, the atom \texttt{tx} is evaluated, and it is expected to be a
-function. If so, this function is invoked on $e$. Whatever this invocation
-returns is what's finally evaluated. Furthermore, the Radicle executable can be
-configured to bypass the root-validator using a simple flag, for when one wants
-to experiment with the machine at the REPL or craft specialised queries. Daemons
-which are owner-mode for a machine should obviously never bypass the root
-validator when accepting new inputs, but the \texttt{query} endpoint on a local
-daemon would just execute expressions normally, without calling \texttt{tx}.
+machines root validation/transaction function \tx; a function that is used for
+all inputs to the machine. When an expression $e$ is submitted to the machine,
+the atom \tx~is evaluated, and it is expected to resolve to a function. If so,
+this function is invoked on $e$ (non-evaluated), returning $e'$, and then $e'$
+is evaluated. For most ``standard'' inputs, \tx is expected to do most of the
+state updates itself, directly updating refs for instance. For inputs which
+modify the code of the machine, \tx is expected to do some validation on the
+accompanying metadata and then return the code for it to be evaluated.
 
-Even just for a simple counter-machine, the eval-redefinition spec of the
-state-machine is not beginner friendly (omitting the prelude):
+The Radicle executable will be given a new configuration options to bypass the
+root-validator, for when one wants to experiment with the machine at the REPL or
+craft specialised queries. A machine accepting input-requests should obviously
+never bypass the root validator, but the \texttt{query} endpoint on a local
+daemon would just execute expressions normally, without going through \tx.
+
+To compare, here is the code for a simple counter-machine which only accepts the
+inputs \texttt{:increment} and \texttt{:get}:
 \begin{lstlisting}
 (def i (ref 0))
 
@@ -609,14 +618,13 @@ state-machine is not beginner friendly (omitting the prelude):
     (match input
       :increment
         (eval (quote (modify-ref! i (fn [x] (+ 1 x)))) rad-state)
-      :getCounter
+      :get
         (list (read-ref i) rad-state))))
 \end{lstlisting}
-
-This is what it would look like with a root-validator:
+And here is the code for the equivalent machine defined using a root-transactor:
 \begin{lstlisting}
 (def i (ref 0))
-
+  
 (def tx
   (fn [expr]
     (if (eq? expr :increment)
@@ -628,15 +636,48 @@ Note that querying has now been pushed out of the machine code altogether; if
 one wants to query the machine for the current value one can just use the
 expression \texttt{(read-ref! i)}.
 
-The function \texttt{tx} is expected to perform most state-updates itself, and
-return a value which evaluates to itself, a simple log of what sort of
-transaction was processed. Only when new \emph{code} is to be added to the
-machine, for example redefinition of \texttt{tx} itself, would the function
-\texttt{tx} return that quoted code, to then be executed on the machine. One of
-the advantages of this is that it removes the need for the \texttt{eval}
-function altogether, which makes the semantics and static-analysis of Radicle
-much easier. However without eval-redefinition, it might be necessary to add
-macro-definition functionality.
+The root-transactor model makes it especially easy to define machines whose code
+can be updated by subsequent inputs.
+\begin{lstlisting}
+(def normal-input?
+  ...)
+
+(def normal-stuff
+  ...)
+
+(def special-input?
+  (fn [x]
+    (and (signed-by-admin? x)
+         (enough-votes? x)
+         ...)))
+
+(def tx
+  (fn [x]
+    (cond
+      (normal-input? x)  (normal-stuff x)
+      (special-input? x) (lookup :code x)
+      :else              (throw invalid-input "bad")))
+\end{lstlisting}
+In this case an input of the form
+\begin{lstlisting}
+{:type :special
+ :author ...
+ :signature ...
+ :votes ...
+ :code (do (def normal-stuff ...)
+           (def tx (fn [x] ...)))}
+\end{lstlisting}
+would be recognised as a special input (as long as the signature is valid, etc.)
+and so \tx~would return the code \texttt{(do (def tx (fn [x] ...)) ...)}. This
+code would then be evaluated, and this would have the effect of providing a new
+definition of \texttt{normal-stuff} and updating \texttt{tx} to use it. If we
+furthermore make Radicle's environments non-hyperstatic (see \ref{nonhyper}),
+then redefining \texttt{tx} wouldn't be necessary.
+
+Another potential advantage of this model is that it removes the need for the
+\texttt{eval} function altogether, which makes the semantics and static-analysis
+of Radicle code much easier. However without eval-redefinition, it might be
+necessary to add macro-definition functionality.
 
 Such validation functions can be layered, higher-order, etc., and this makes for
 more flexible code-reuse between machines. In particular, because they can be
@@ -663,27 +704,28 @@ the rest of the dict, and then pass
 \end{lstlisting}
 to the sub-validator $f$.
 
-Higher-order validator can also be stateful. For example, a validator can manage
-a vote for some binary decision. It would look for specific sorts of inputs,
-\emph{proposal inputs}, and when it encounters one, start a vote on that
+Higher-order validators can also be stateful. For example, a validator can
+manage a vote for some binary decision. It would look for specific sorts of
+inputs, \emph{proposals}, and when it encounters one, start a vote on that
 proposal (other sorts of inputs are simply passed through to some
-sub-handler). At that point it then also listens for \emph{vote inputs} for that
+sub-handler). At that point it then also listens for \emph{votes} for that
 specific proposal, maintaining in state how much votes each outcome has
-accumulated. When it successfully processes a vote, it simply returns the
+accumulated. When it successfully processes a vote, it simply returns some
 metadata:
 \begin{lstlisting}
 [:vote-accepted
   {:vote-for "123"
    :user "user-id"}]
 \end{lstlisting}
-When enough votes have come through for there to be a winner, that expression is
-passed through to another sub-handler.
+When enough votes have come through for there to be a winner, the proposal
+itself (which may contain code to execute, etc.) is passed through to another
+sub-handler.
 
 Such a system can for example enable most inputs (new issues, comments, etc.) to
 go through a standard transactor, but important code changes to go through a
 voting process before being evaluated.
 
-\subsection{Non-hyper static environment}
+\subsection{Non-hyper static environment}\label{nonhyper}
 
 We have created a few remote machines and they all seem to have the
 following:
@@ -843,7 +885,7 @@ send the pair of hashes to known monitors of the machine (as specified in the
 machine itself, or by the portal), and display an icon if they all confirm the
 hash-pair, or block the page entirely if any one of them does not.
 
-\section{Rough implementation and roadmap notes}
+\section{Rough implementation and roadmap notes}\label{impl}
 
 \begin{itemize}
 \item
@@ -906,7 +948,8 @@ hash-pair, or block the page entirely if any one of them does not.
     \begin{itemize}
     \item
       Requesting the latest signed head. Obviously any signed head returned by
-      this method should also be published to the PubSub topic.
+      this method should also be published to the PubSub topic. The machine is
+      still expected to publish signed heads to PubSub in the usual way.
     \item
       Requesting a range of inputs along with the Merkle proof of validity.
     \item
