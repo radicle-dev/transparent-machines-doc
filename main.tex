@@ -37,8 +37,6 @@
 \date{}
 \author{James Haydon}
 
-\thanks{\textsuperscript{$\dagger$}Monadic, \texttt{james@monadic.xyz}}
-
 \begin{abstract}
 This document presents a vision for a possible future of Radicle. The main goal
 is to transform Radicle into a technology that powers an ecosystem of
@@ -742,7 +740,6 @@ following:
 
 Some ways people might ``reprogram'' a machine:
 \begin{enumerate}
-\def\labelenumi{\arabic{enumi}.}
 \item
   Fix some of the data (add a default field).
 \item
@@ -755,25 +752,27 @@ Some ways people might ``reprogram'' a machine:
 Scenario (1) is probably quite common as part of an update which does
 (2) or (3), because new features of changes to old features might demand
 a modified data format. In any case it is probably quite easy, just a
-\texttt{(modify-ref\~\ldots)}.
+\texttt{(modify-ref! \ldots)}.
 
-The first step of scenario (3) is quite easy: add a new function for the
-new command. However you must then mutate the input-validator to accept
-this new invocation. This might be tricky: the pertinent validator might
-be under a few layers of higher order validators. If you are lucky the
-validtor you want to mutate was put in a ref (to be dereferenced by
-other validators) and you can mutate that directly.
+The first step of scenario (3) is quite easy: add a new function for the new
+command. However you must then mutate the input-validator to accept this new
+invocation. This might be tricky: the pertinent validator might be under a few
+layers of higher order validators. If you are lucky one of the functions you
+need to change is stored in a ref that you can mutate directly, otherwise you
+will have to redefine all the functions that use the function you wish to
+modify.
 
-In any case it seems that scenario (2) (tweaking existing functionality)
-is the tricky one. Relaxing the hyperstatic environment seems like one
-way of making this easier, since now you can just resubmit definitions
-for the functions you want to change.
+In any case it seems that scenario (2) (tweaking existing functionality) is the
+tricky one. Relaxing the hyperstatic environment seems like one way of making
+this easier, since now you can just resubmit definitions for the functions you
+want to change.
 
-Non-hyperstatic would also allow for old definitions to get garbage
-collected, whereas before this wasn't possible because an old definition
-could still be in use in some deeply nested closure. Machine
-participants would then be much more encouraged to update the modules in
-use on a machine.
+Non-hyperstatic would also allow for old definitions to get garbage collected,
+whereas before this wasn't possible because an old definition could still be in
+use in some deeply nested closure. Machine participants would then be much more
+encouraged to update the modules in use on a machine. Closures would also be a
+lot more compact, which might also make serialisation of the full machine state
+much easier.
 
 \section{CRDT data types}
 
