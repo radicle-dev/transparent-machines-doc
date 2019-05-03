@@ -894,7 +894,7 @@ hash-pair, or block the page entirely if any one of them does not.
   One possible implementation for transparent machines would use IPFS as much as
   possible. Unfortunately IPFS PubSub messages are not signed at this time, so a
   Radicle machine would be identified by an IPNS name which points to a record
-  containing, among other things a Radicle key and a pointer to the latest
+  containing, among other things, a Radicle key and a pointer to the latest
   signed head. The Radicle key should never change, and is also used for signing
   PubSub messages. Care should be taken to create simple interfaces for:
   \begin{itemize}
@@ -909,14 +909,12 @@ hash-pair, or block the page entirely if any one of them does not.
   \item
     The machine uses the IPFS DAG for hash linking and replication of the
     blocks. It is expected that the machine and all its monitors pin all the
-    machine's blocks. Furthermore blocks should contain a pointer to a tree of
-    inputs on IPFS (e.g.~branching factor of 32, 100 expressions stored at each
-    leaf) for faster cold starts. If present, this field also need to be checked
-    by monitors.
+    machine's blocks.
   \item
-    The blocks contains some extra optional data: the Merkle hash for a dense
-    left-biased Merkle tree of all the inputs of the machine. If this is
-    present, it must be checked by the monitors.
+    The blocks contain some extra optional data: the Merkle hash for a dense
+    left-biased Merkle tree of all the inputs of the machine (e.g.~branching
+    factor of 32, 100 expressions stored at each leaf) for faster cold
+    starts. If this is present, it must be checked by the monitors.
   \item
     IPFS pubsub for all communication between machines and monitors:
     \begin{itemize}
@@ -937,8 +935,8 @@ hash-pair, or block the page entirely if any one of them does not.
         If the latest signed head published to the topic hasn't been republished
         in the last $n$ minutes then it publishes it.
       \item
-        Also hopefully, IPFS PubSub might already have some form of message
-        reduplication.
+        Also hopefully IPFS PubSub might already have some form of message
+        reduplication, in which case this should all be rather efficient.
       \end{itemize}
     \end{itemize}
   \item
@@ -966,21 +964,18 @@ hash-pair, or block the page entirely if any one of them does not.
   to be accepted in some form (even in a ``pending'' state) with high
   availability. There are a few options for this:
   \begin{itemize}
-  \item[(1)]
-    We also launch a ``pending inputs'' queue service. Potential inputs can
-    accumulate here when the machine is offline. Clients may query this service
-    in order to create a combined view of the machine.
-  \item[(2)]
-    We also launch a Radicle machine hosting service, to allow people to spin up
-    trusted Radicle machines at the press of a button.
-  \item[(3)]
-    We implement the Radicle CRDT datatypes.
+  \item[(1)] We also launch a ``pending inputs'' queue service. Potential inputs
+    can accumulate here when the machine is offline. Clients may query this
+    service in order to create a combined view of the machine.
+  \item[(2)] We also launch a Radicle machine hosting service (see below), to
+    allow people to spin up trusted Radicle machines at the press of a button.
+  \item[(3)] We implement the Radicle CRDT datatypes.
   \end{itemize}
   Since (2) seems desirable in any case, it would probably be best to start with
   this and add (1) and (3) at a later stage.
 
 \item
-  Code collaboration infra:
+  Code collaboration apps:
   \begin{itemize}
   \item
     Username registry,
@@ -999,6 +994,36 @@ hash-pair, or block the page entirely if any one of them does not.
   \end{itemize}
 \item
   Better FFI for common langs,
+\item
+  \emph{Radicle machine hosting:} Just like GitHub is a centralised host for
+  (decentralised) Git repositories, we launch a Radicle machine hosting service
+  that offers high availability/throughput machines with:
+  \begin{itemize}
+  \item
+    1-click to start a new machine. The keys are generated and provided (but you
+    are warned against actually using them, since this could cause a fork). At
+    any time your machine and we promise to delete the keys from our database.
+  \item
+    UI to discover machines,
+  \item
+    Creation and management of ``user accounts'', that is, generation of a
+    Radicle key-pair, and registration on a specific ``username registration''
+    machine we happen to own.
+  \item
+    A URL/page for each machine, which displays the machine's \texttt{README}
+    and UI (as specified in the machine itself). From this page one can also:
+    \begin{itemize}
+    \item
+      Submit inputs to the machine (i.e. call Radicle code as specified in the
+      machine).
+    \item
+      Run custom queries.
+    \item
+      Generate and submit proofs for inter-machine communication.
+    \item
+      View the state of CRDTs associated to the machine.
+    \end{itemize}
+  \end{itemize}
 \end{itemize}
 
 \begin{thebibliography}{9}
